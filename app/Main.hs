@@ -16,6 +16,7 @@ import qualified Optics as Optics
 import Optics ((%))
 import qualified Player
 import qualified Rapid 
+import Optics.State.Operators ((%=))
 
 screenWidth, screenHeight :: Int
 screenWidth = 1000
@@ -40,12 +41,18 @@ view model =
     (Gloss.pictures $ map Asteroid.view $ model ^. asteroids)
     <> (Player.view $ model ^. player)
 
-updateTime :: Float -> Model -> Model
-updateTime dt =
-    asteroids % Optics.traversed % Asteroid.physics %~ Physics.update dt []
+timeUpdate :: Float -> Model -> Model
+timeUpdate dt = execState $ do
+    -- note: this can lead to funky behavior if the player's update dependet on the asteroids
+    -- it would be nicer if all the fields were guaranteed to upadte indepdenedtly based on the
+    -- previous model and then reconcile
+    asteroids % Optics.traversed % Asteroid.physics %= Physics.update dt []
+    player %= Player.timeUpdate dt
 
-updateEvent :: Gloss.Event -> Model -> Model
-updateEvent event model = model
+
+eventUpdate :: Gloss.Event -> Model -> Model
+eventUpdate event =
+    player %~ Player.eventUpdate event
 
 game :: IO ()
 game = do
@@ -64,8 +71,8 @@ game = do
         60
         initalModel
         view
-        updateEvent
-        updateTime
+        eventUpdate
+        timeUpdate
 
     -- Gloss.simulate
     --     (Gloss.InWindow "asteroids" (screenWidth, screenHeight) (100, 100))
