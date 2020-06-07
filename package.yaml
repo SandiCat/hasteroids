@@ -35,6 +35,7 @@ dependencies:
 - utility-ht
 - rapid
 - random
+- reactive-banana
 
 ghc-options:
 - -Wall
