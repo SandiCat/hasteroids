@@ -81,14 +81,29 @@ moveCommand :: GlossNetwork
 moveCommand eTick eEvent = mdo
   currentDelta <- stepper 0 eTick
   mouseClicks <- (uncurry Vec.Vec2 <$>) <$> mkMouseClicks eEvent
-  commands <-
-    accumB Seq.empty $
-      unions
-        [ whenE reachedDestination eTick -- sample on tick i guess
-            <&> (\_ -> Seq.drop 1),
-          mouseClicks
-            <&> flip (|>)
-        ]
+  (maybeNewHeadE, commandsB) <-
+    mapAccum Seq.empty $
+      unionWith
+        ( \a b -> runState $ do
+            x <- state a
+            y <- state b
+            return (x <> y)
+        )
+        ( whenE reachedDestination eTick -- sample on tick i guess
+            <&> ( \_ acc ->
+                    case Seq.viewl acc of
+                      EmptyL -> (Nothing, acc)
+                      goal :< rest -> (Just goal, rest)
+                )
+        )
+        ( mouseClicks
+            <&> (((Nothing,) .) . flip (|>))
+        )
+  unitPosition <-
+    newHeadE
+      -- DOESNT WORK - accumB works in MonadMoment, no way to fix it :(
+      <&> (\goal -> accumB Vec.zero $ ((\dt pos -> pos &+ (dt *& Vec.norm goal)) <$> eTick))
+      & switchB (pure Vec.zero)
   let reachedDestination :: Behavior Bool
       reachedDestination =
         ( \pos cmds ->
@@ -99,19 +114,8 @@ moveCommand eTick eEvent = mdo
                 False
         )
           <$> unitPosition
-          <*> commands
-      unitPosition :: Behavior Vec2
-      unitPosition =
-        ( \v0 cmds dt ->
-            case Seq.viewl cmds of
-              v1 :< _ ->
-                (*&) (dt * speed) $ Vec.normalize $ v1 &- v0
-              Seq.EmptyL ->
-                v0
-        )
-          <$> unitPosition
-          <*> commands
-          <*> currentDelta
+          <*> commandsB
+      newHeadE = filterJust maybeNewHeadE
       speed :: Float
       speed = 1
       pic :: Behavior Picture
