@@ -6,7 +6,7 @@ import Data.Sequence ((<|), Seq (..), ViewL (..), (|>))
 import qualified Data.Sequence as Seq
 import qualified Data.Vect.Float as Vec
 import Data.Vect.Float ((&*), (&+), (&-), (*&))
-import Data.Vect.Float (Vec2)
+import Data.Vect.Float (Vec2 (..))
 import Graphics.Gloss
 import Graphics.Gloss.Interface.Pure.Game hiding (Event)
 import Reactive.Banana
@@ -30,7 +30,7 @@ sinCircle eTick eEvent = do
 mkMousePos ::
   MonadMoment m =>
   Event InputEvent ->
-  m (Behavior (Float, Float))
+  m (Behavior Vec2)
 mkMousePos eEvent =
   eEvent
     <&> ( \case
@@ -38,7 +38,8 @@ mkMousePos eEvent =
             _ -> Nothing
         )
     & filterJust
-    & stepper (0, 0)
+    <&> uncurry Vec2
+    & stepper (Vec2 0 0)
 
 keyEvent eEvent key =
   eEvent
@@ -54,13 +55,15 @@ keyEvent eEvent key =
 
 mkMouseClicks ::
   MonadMoment m =>
+  KeyState ->
+  MouseButton ->
   Event InputEvent ->
-  m (Event (Float, Float))
-mkMouseClicks eEvent = do
+  m (Event Vec2)
+mkMouseClicks keyState button eEvent = do
   mousePos <- mkMousePos eEvent
   return $
-    keyEvent eEvent (MouseButton LeftButton)
-      & filterE (\case Up -> True; Down -> False)
+    keyEvent eEvent (MouseButton button)
+      & filterE (== keyState)
       & (<@) mousePos
 
 clicks :: GlossNetwork
@@ -73,10 +76,20 @@ clicks eTick eEvent = do
       & fmap (:)
       & accumE []
   allClicks
-    <&> map (\(x, y) -> translate x y $ circle 20)
+    <&> map (\(Vec2 x y) -> translate x y $ circle 20)
     <&> pictures
     & stepper mempty
 
+subsequent :: MonadMoment m => (a, a) -> Event a -> m (Event (a, a))
+subsequent start e =
+  e
+    <&> (\x (_, prev) -> (prev, x))
+    & accumE start
+
+vecEq v1 v2 =
+  (< 2) $ Vec.norm $ v1 &- v2
+
+-- TODO: rewrite with Behavior Time and linear interpolation between the first two points of clicks
 moveCommand :: GlossNetwork
 moveCommand eTick eEvent = mdo
   let reachedDestination :: Behavior Bool
@@ -84,15 +97,15 @@ moveCommand eTick eEvent = mdo
         ( \pos cmds ->
             case Seq.viewl cmds of
               goal :< _ ->
-                (< 0.01) $ Vec.norm $ pos &- goal
+                vecEq goal pos
               EmptyL ->
                 False
         )
           <$> unitPosition
           <*> commandsB
-      newHeadE = filterJust maybeNewHeadE
       speed :: Float
-      speed = 1
+      speed = 50
+      dup a = (a, a)
       pic :: Behavior Picture
       pic =
         ( \(Vec.Vec2 x y) cmds ->
@@ -103,28 +116,57 @@ moveCommand eTick eEvent = mdo
         )
           <$> unitPosition
           <*> commandsB
-  mouseClicks <- (uncurry Vec.Vec2 <$>) <$> mkMouseClicks eEvent
-  (maybeNewHeadE, commandsB) <-
+      newGoalE =
+        commandsSubsequent
+          <&> \case
+            (Empty, Empty) -> Nothing
+            (Empty, x :<| _) -> Just x
+            (x :<| _, y :<| _) -> if vecEq x y then Nothing else Just y
+            -- if you make two subsequent closeby commands, this will eat one
+            -- probably need to do something else in `mapAccum`
+            (_, Empty) -> Nothing
+          & filterJust
+  mouseClicks <- mkMouseClicks Up LeftButton eEvent
+  (commandsE, commandsB) <-
     mapAccum Seq.empty $
-      unionWith
-        ( \a b -> runState $ do
-            x <- state a
-            y <- state b
-            return (x <> y)
-        )
-        ( whenE reachedDestination eTick -- sample on tick i guess
-            <&> ( \_ acc ->
-                    case Seq.viewl acc of
-                      EmptyL -> (Nothing, acc)
-                      goal :< rest -> (Just goal, rest)
-                )
-        )
-        ( mouseClicks
-            <&> (((Nothing,) .) . flip (|>))
-        )
-  unitPosition <- accumB Vec.zero unitPositionTransform
+      (dup .)
+        <$> unions
+          [ whenE reachedDestination eTick -- sample on tick i guess
+              <&> ( \_ acc ->
+                      case Seq.viewl acc of
+                        EmptyL -> acc
+                        _ :< rest -> rest
+                  ),
+            mouseClicks
+              <&> flip (|>)
+          ]
+  commandsSubsequent <- subsequent (Seq.empty, Seq.empty) commandsE
   unitPositionTransform <-
-    newHeadE
-      <&> (\goal -> (eTick <&> \dt v -> v &+ Vec.normalize (goal &- v) &* dt * speed))
+    newGoalE
+      <&> (\goal -> (eTick <&> \dt v -> v &+ Vec.normalize (goal &- v) &* (dt * speed)))
       & switchE
+  unitPosition <- accumB Vec.zero unitPositionTransform
   return pic
+
+selectCommand :: GlossNetwork
+selectCommand eTick eEvent = do
+  mousePos <- mkMousePos eEvent
+  mouseDown <- mkMouseClicks Down LeftButton eEvent
+  mouseUp <- mkMouseClicks Up LeftButton eEvent
+  firstCorner <-
+    unions
+      [ mouseDown <&> const . Just,
+        mouseUp <&> const . const Nothing
+      ]
+      & accumB Nothing
+  return $
+    ( \firstCorner (Vec2 mx my) ->
+        case firstCorner of
+          Nothing -> mempty
+          Just (Vec2 x0 y0) ->
+            rectanglePath (abs $ x0 - mx) (abs $ y0 - my)
+              & lineLoop
+              & translate ((x0 + mx) / 2) ((y0 + my) / 2)
+    )
+      <$> firstCorner
+      <*> mousePos
