@@ -5,6 +5,7 @@ import qualified Control.Monad.Random.Lazy as Rand
 import qualified Data.Vect.Float as Vec
 import Data.Vect.Float ((&*), (&+), (&-), (*&))
 import Data.Vect.Float (Vec2)
+import FRPUtil (test)
 import qualified Graphics.Gloss.Interface.Pure.Display as Gloss
 import qualified Graphics.Gloss.Interface.Pure.Game as Gloss
 import qualified Graphics.Gloss.Interface.Pure.Simulate as Gloss
@@ -88,7 +89,7 @@ game = do
 
 main :: IO ()
 main =
-  game
+  test TestFRP.moveCommand
 -- TestFRP.test TestFRP.moveCommand
 -- reload =
 --     Rapid.rapid 0 $ \r ->
