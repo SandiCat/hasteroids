@@ -45,8 +45,8 @@ view model =
 
 timeUpdate :: Float -> Model -> Model
 timeUpdate dt = execState $ do
-  -- note: this can lead to funky behavior if the player's update dependet on the asteroids
-  -- it would be nicer if all the fields were guaranteed to upadte indepdenedtly based on the
+  -- note: this can lead to funky behavior if the player's update depends on the asteroids
+  -- it would be nicer if all the fields were guaranteed to update independently based on the
   -- previous model and then reconcile
   asteroids % Optics.traversed % Asteroid.physics %= Physics.update dt []
   player %= Player.timeUpdate dt
@@ -87,7 +87,9 @@ game = do
 --     (view [model])
 
 main :: IO ()
-main = TestFRP.test TestFRP.moveCommand
+main =
+  game
+-- TestFRP.test TestFRP.moveCommand
 -- reload =
 --     Rapid.rapid 0 $ \r ->
 --         Rapid.restart r "game" $
