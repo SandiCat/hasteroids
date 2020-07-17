@@ -16,6 +16,8 @@ import Optics.State.Operators ((%=))
 import qualified Physics
 import qualified Player
 import qualified Rapid
+import Reactive.Banana
+import ReactiveGloss (playBanana)
 import qualified System.Random as Rand
 import qualified TestFRP
 
@@ -74,6 +76,16 @@ game = do
     eventUpdate
     timeUpdate
 
+asteroidFrp :: IO ()
+asteroidFrp = playBanana
+  (Gloss.InWindow "asteroids" (screenWidth, screenHeight) (100, 100))
+  (Gloss.greyN 0.1)
+  60
+  $ \eTick eEvent -> do
+    initAsteroids <- liftIO $ randomAsteroids 10
+    shapes <- Asteroid.posAndShape eTick initAsteroids
+    return $ Gloss.pictures . (Asteroid.view <$>) <$> shapes
+
 main :: IO ()
 main =
-  test TestFRP.moveCommand
+  asteroidFrp
