@@ -74,24 +74,6 @@ game = do
     eventUpdate
     timeUpdate
 
--- Gloss.simulate
---     (Gloss.InWindow "asteroids" (screenWidth, screenHeight) (100, 100))
---     (Gloss.greyN 0.1)
---     60
---     model
---     view
---     update
-
--- Gloss.display
---     (Gloss.InWindow "asteroids" (screenWidth, screenHeight) (100, 100))
---     (Gloss.greyN 0.1)
---     (view [model])
-
 main :: IO ()
 main =
   test TestFRP.moveCommand
--- TestFRP.test TestFRP.moveCommand
--- reload =
---     Rapid.rapid 0 $ \r ->
---         Rapid.restart r "game" $
---             game
